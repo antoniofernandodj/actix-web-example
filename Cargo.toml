@@ -1,0 +1,25 @@
+[package]
+name = "actix-web-example"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [".", "migration", "entity"]
+
+[dependencies]
+entity = { path = "entity" }
+migration = { path = "migration" }
+
+actix-web = "4.3.1"
+derive_more = "0.99.17"
+dotenv = "0.15.0"
+serde = "1.0.203"
+serde_json = "1.0.117"
+shuttle-actix-web = "0.45.0"
+shuttle-runtime = "0.45.0"
+tokio = "1.26.0"
+uuid = { version = "1.8.0", features = ["v4"] }
+sea-orm = { version = "^0.12.0", features = [ "sqlx-postgres", "runtime-async-std-native-tls", "macros" ] }
+futures = "0.3.28"
+chrono = "0.4.38"
+# sea-orm-cli = "0.12.15"
