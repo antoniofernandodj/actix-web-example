@@ -7,18 +7,16 @@ pub fn get_scope() -> Scope {
     scope("/words")
         .route(
             "/{id}",
-            get()
-                    .to(services::get_word)
+            get().to(services::get_word)
         )
         .route(
             "/",
-            post()
-                    .to(services::create_word)
+            post().to(services::create_word)
         )
         .route(
             "/",
             get()
-                    .guard(guards::LoggedInGuard)
+                    .guard(guards::JWTGuard)
                     .to(services::get_words)
         )
 }

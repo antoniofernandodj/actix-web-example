@@ -70,3 +70,6 @@ enum User {
     PasswordHash,
     CreatedAt,
 }
+
+// ALTER TABLE nome_da_tabela
+// ADD CONSTRAINT nome_da_constrain UNIQUE (nome_da_coluna);
