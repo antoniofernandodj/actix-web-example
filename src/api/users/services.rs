@@ -1,5 +1,6 @@
 use actix_web::HttpResponse;
-use actix_web::web::{Path, Json};
+use actix_web::web::{Json, Path};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use entity::user::Model as User;
 use entity::user::ActiveModel;
 
@@ -7,24 +8,52 @@ use sea_orm::DeleteResult;
 // use crate::state::AppState;
 use sea_orm::{prelude::DatabaseConnection, InsertResult, prelude::DbErr};
 use serde_json::json;
-use crate::api::users::schema::{CreateUserRequest, CreateUserResponse, UpdateUserRequest};
-use crate::repositories::user::{UserRepository, Repository};
+use uuid::Uuid;
+use crate::api::security::user_token::UserToken;
+use crate::api::security::user_token::TokenBodyResponse;
+use crate::api::users::schema::{
+    CreateUserRequest,
+    CreateUserResponse,
+    UpdateUserRequest,
+    LoginDTO
+};
+use crate::repositories::user::UserRepository;
 use crate::database;
-use crate::errors;
+use crate::errors::ServiceError;
 use crate::prelude::*;
 
 
 pub async fn create(
     body: Json<CreateUserRequest>
-) -> Result<HttpResponse, errors::HTTP400Error> {
+) -> Result<HttpResponse, ServiceError> {
 
     let connection: DatabaseConnection = database::init().await;
     let repo: UserRepository = UserRepository::new(&connection);
     let body: CreateUserRequest = body.into_inner();
 
+    let results: [(Option<User>, &str); 2] = [
+        (repo.find_by_username(&body.username).await, "Username"),
+        (repo.find_by_email(&body.email).await, "Email")
+    ];
+
+    for (result, field) in results.iter() {
+        if let Some(_) = result {
+    
+            connection.close().await.unwrap();
+    
+            return Err(
+                ServiceError::InternalServerError {
+                    error_message: format!("Error Creating the user! {} taken.", field)
+                }
+            )    
+        }
+    }
+
+    let password_hash = hash(&body.password_hash, DEFAULT_COST).unwrap();
+
     let result: Result<InsertResult<ActiveModel>, DbErr> = repo.create_user(
         body.username,
-        body.password_hash,
+        password_hash,
         body.name,
         body.email
     ).await;
@@ -41,14 +70,14 @@ pub async fn create(
 
     } else {
         let msg: String = format!("Error Creating the user!");
-        Err(errors::HTTP400Error { name: msg })
+        Err(ServiceError::InternalServerError { error_message: msg })
     }
 }
 
 
 pub async fn get_one(
     path: Path<String>
-) -> Result<HttpResponse, errors::HTTP404Error> {
+) -> Result<HttpResponse, ServiceError> {
 
     let uuid: String = path.into_inner();
 
@@ -66,12 +95,12 @@ pub async fn get_one(
 
     } else {
         let msg: String = format!("User {} not found!", uuid);
-        Err(errors::HTTP404Error { name: msg })
+        Err(ServiceError::NotFound { error_message: msg })
     }
 }
 
 
-pub async fn get_all() -> Result<HttpResponse, errors::HTTP404Error> {
+pub async fn get_all() -> Result<HttpResponse, ServiceError> {
 
     let connection: DatabaseConnection = database::init().await;
     let repo: UserRepository = UserRepository::new(&connection);
@@ -88,7 +117,7 @@ pub async fn get_all() -> Result<HttpResponse, errors::HTTP404Error> {
 
 pub async fn delete(
     path: Path<String>
-) -> Result<HttpResponse, errors::HTTP400Error> {
+) -> Result<HttpResponse, ServiceError> {
 
     let uuid: String = path.into_inner();
 
@@ -100,7 +129,7 @@ pub async fn delete(
     if result.is_none() {
         connection.close().await.unwrap();
         let msg: String = format!("User {} not found!", uuid);
-        return Err(errors::HTTP400Error { name: msg })
+        return Err(ServiceError::NotFound { error_message: msg })
     }
 
     let result: Result<DeleteResult, DbErr> = repo.delete_by_uuid(uuid.clone()).await;
@@ -113,7 +142,7 @@ pub async fn delete(
         return Ok(HttpResponse::Ok().json(body))
     } else {
         let msg: String = format!("Erro ao deletar o usuário {}!", uuid);
-        return Err(errors::HTTP400Error { name: msg })
+        return Err(ServiceError::InternalServerError { error_message: msg })
     }
 
 }
@@ -122,7 +151,7 @@ pub async fn delete(
 pub async fn update(
     path: Path<String>,
     body: Json<UpdateUserRequest>
-) -> Result<HttpResponse, errors::HTTP400Error> {
+) -> Result<HttpResponse, ServiceError> {
 
     let uuid: String = path.into_inner();
     let update_data: UpdateUserRequest = body.into_inner();
@@ -135,7 +164,7 @@ pub async fn update(
     if result.is_none() {
         connection.close().await.unwrap();
         let msg: String = format!("User {} not found!", uuid);
-        return Err(errors::HTTP400Error { name: msg })
+        return Err(ServiceError::NotFound { error_message: msg })
     }
 
     let updated_user_result: Result<User, DbErr> = repo.update_user(
@@ -155,7 +184,100 @@ pub async fn update(
         Err(_) => {
             connection.close().await.unwrap();
             let msg: String = format!("Erro ao atualizar o usuário {}!", uuid);
-            Err(errors::HTTP400Error { name: msg })
+            Err(ServiceError::BadRequest { error_message: msg })
         }
     }
 }
+
+
+
+// POST users/login
+pub async fn login(
+    body: Json<LoginDTO>
+) -> Result<HttpResponse, ServiceError> {
+    let connection: DatabaseConnection = database::init().await;
+
+    let auth_service = AuthService::new(&connection);
+
+    let logged_user = auth_service.login_user(
+        &body.login,
+        &body.password
+    ).await;
+
+    match logged_user {
+
+        None => {
+            connection.close().await.unwrap();
+
+            Err(ServiceError::Unauthorized {
+                error_message: "MESSAGE_USER_NOT_FOUND".to_string(),
+            })
+        },
+
+        Some(logged_user) => {
+
+            let login_session = AuthService::generate_login_session();
+            let token: String = UserToken::generate_token(
+                logged_user.uuid.clone(), login_session
+            );
+
+            connection.close().await.unwrap();
+            let json = TokenBodyResponse::new(token);
+            Ok(json_response(json, Some(200)))
+
+        },
+    }
+}
+
+
+struct AuthService<'a> {
+    connection: &'a DatabaseConnection,
+}
+
+impl<'a> AuthService<'a> {
+    fn new<'b>(connection: &'a DatabaseConnection) -> Self {
+        AuthService {
+            connection:connection,
+        }
+    }
+
+    pub async fn login_user(self, login: &str, password: &str) -> Option<User> {
+
+        let repo = UserRepository::new(self.connection);
+    
+        let users: Vec<User> = repo.get_many().await;
+    
+        let mut users_filtred: Vec<User> = users.clone().into_iter()
+            .filter(|user| user.email == login)
+            .collect();
+    
+        let username_iter: Vec<User>  = users.into_iter()
+            .filter(|user| user.username == login)
+            .collect();
+    
+        users_filtred.extend(username_iter);
+    
+        if users_filtred.is_empty() {
+            return None
+        }
+    
+        let user_to_verify = users_filtred[0].clone();
+    
+        if !user_to_verify.password_hash.is_empty()
+            && verify(password, &user_to_verify.password_hash).unwrap() {
+    
+            return Some(user_to_verify)
+        } else {
+            return None
+        }
+    
+    }
+    
+    
+    fn generate_login_session() -> String {
+        Uuid::new_v4().to_string()
+    }
+    
+    
+}
+

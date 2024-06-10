@@ -1,6 +1,7 @@
 
 use entity::user;
 use migration::Expr;
+use migration;
 use sea_orm::DbErr;
 use sea_orm::DeleteResult;
 use sea_orm::QueryFilter;
@@ -16,23 +17,15 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, EntityTrait, InsertResult};
 
 
-pub trait Repository<'a, Entity> where Entity: EntityTrait {
-    fn new(connection: &'a DatabaseConnection) -> Self;
-    async fn find_by_uuid(&self, id: String) -> Option<Entity::Model>;
-    async fn get_many(&self) -> Vec<Model>;
-    async fn delete_by_uuid(&self, uuid: String) -> Result<DeleteResult, DbErr>;
-}
-
-
 pub struct UserRepository<'a> {
     connection: &'a DatabaseConnection
 }
-impl<'a> Repository<'a, User> for UserRepository<'a> {
-    fn new(connection: &'a DatabaseConnection) -> Self {
+impl<'a> UserRepository<'a> {
+    pub fn new(connection: &'a DatabaseConnection) -> Self {
         UserRepository{connection}
     }
 
-    async fn find_by_uuid(&self, uuid: String) -> Option<Model> {
+    pub async fn find_by_uuid(&self, uuid: String) -> Option<Model> {
 
         let user: Option<Model> = User::find_by_id(uuid)
             .one(self.connection).await.unwrap();
@@ -40,7 +33,26 @@ impl<'a> Repository<'a, User> for UserRepository<'a> {
         return user
     }
 
-    async fn get_many(&self) -> Vec<Model> {
+
+    pub async fn find_by_email(&self, email: &str) -> Option<Model> {
+
+        let email_col: Expr = Expr::col(user::Column::Email);
+
+        User::find()
+            .filter(email_col.eq(email))
+            .one(self.connection).await.unwrap()
+    }
+
+    pub async fn find_by_username(&self, username: &str) -> Option<Model> {
+
+        let username_col: Expr = Expr::col(user::Column::Username);
+
+        User::find()
+            .filter(username_col.eq(username))
+            .one(self.connection).await.unwrap()
+    }
+
+    pub async fn get_many(&self) -> Vec<Model> {
         let user: Vec<Model> = User::find()
             .order_by_asc(entity::user::Column::CreatedAt).all(self.connection)
             .await.unwrap();
@@ -48,7 +60,7 @@ impl<'a> Repository<'a, User> for UserRepository<'a> {
         return user
     }
 
-    async fn delete_by_uuid(&self, uuid: String) -> Result<DeleteResult, sea_orm::DbErr> {
+    pub async fn delete_by_uuid(&self, uuid: String) -> Result<DeleteResult, sea_orm::DbErr> {
         let uuid_col: Expr = Expr::col(user::Column::Uuid);
 
         let result: DeleteResult = User::delete_many()
@@ -57,10 +69,6 @@ impl<'a> Repository<'a, User> for UserRepository<'a> {
         Ok(result)
     }
 
-
-}
-
-impl<'a> UserRepository<'a> {
     
     #[allow(unused)]
     pub async fn update_user(

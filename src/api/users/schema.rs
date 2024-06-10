@@ -35,3 +35,9 @@ pub struct UpdateUserRequest {
     pub name: Option<String>,
     pub email: Option<String>,
 }
+
+#[derive(Deserialize, Serialize)]
+pub struct LoginDTO {
+    pub login: String,
+    pub password: String
+}

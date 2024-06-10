@@ -8,28 +8,44 @@ pub fn get_scope() -> Scope {
 
         .route(
             "/",
-            post().to(api::users::services::create)
+            post()
+                    // .guard(api::security::guards::JWTGuard)
+                    .to(api::users::services::create)
         )
 
         .route(
             "/",
-            get().to(api::users::services::get_all)
+            get()
+                    .guard(api::security::guards::JWTGuard)
+                    .to(api::users::services::get_all)
         )
 
         .route(
             "/{uuid}",
-            get().to(api::users::services::get_one)
+            get()
+                    .guard(api::security::guards::JWTGuard)
+                    .to(api::users::services::get_one)
         )
 
 
         .route(
             "/{uuid}",
-            delete().to(api::users::services::delete)
+            delete()
+                    .guard(api::security::guards::JWTGuard)
+                    .to(api::users::services::delete)
         )
 
         .route(
             "/{uuid}",
-            put().to(api::users::services::update)
+            put()
+                    .guard(api::security::guards::JWTGuard)
+                    .to(api::users::services::update)
+        )
+
+        .route(
+            "/login",
+            post()
+                    .to(api::users::services::login)
         )
 
 }
