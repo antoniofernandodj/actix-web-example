@@ -155,7 +155,6 @@ where
             let auth = authenticate(hm).await;
 
             if auth {
-                println!("Hi from response");
                 Ok(res)
             } else {
                 Err(actix_web::error::ErrorUnauthorized("Unauthorized"))
