@@ -1,9 +1,7 @@
-use hyper::{Body, Client, Method, Request, Response, StatusCode};
-use hyper::client::HttpConnector;
-use hyper_tls::HttpsConnector;
 use serde::{Serialize, Deserialize};
 use tokio;
 use rand;
+use reqwest;
 
 #[derive(Serialize)]
 struct User {
@@ -19,42 +17,13 @@ pub struct CreateUserResponse {
     pub msg: String,
 }
 
-async fn make_post_request(user: &User) -> Result<Response<Body>, Box<dyn std::error::Error>> {
-    let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-    let client: Client<HttpsConnector<HttpConnector>> = Client::builder().build::<_, hyper::Body>(https);
-
-    let json = serde_json::to_string(&user)?;
-
-    let req: Request<Body> = Request::builder()
-        .method(Method::POST)
-        .uri("http://127.0.0.1:8000/users/")
-        .header("Content-Type", "application/json")
-        .body(Body::from(json))?;
-
-    let resp: Response<Body> = client.request(req).await?;
-
-    Ok(resp)
-}
-
-async fn make_get_request(id: &str) -> Result<Response<Body>, Box<dyn std::error::Error>> {
-    let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-    let client: Client<HttpsConnector<HttpConnector>> = Client::builder().build::<_, hyper::Body>(https);
-
-    let req: Request<Body> = Request::builder()
-        .method(Method::GET)
-        .uri(format!("http://127.0.0.1:8000/users/{id}"))
-        .header("Content-Type", "application/json")
-        .body(Body::empty())?;
-
-    let resp: Response<Body> = client.request(req).await?;
-
-    Ok(resp)
-}
 
 mod tests {
     use rand::Rng;
 
     use super::*;
+    use reqwest::StatusCode;
+
 
     #[tokio::test]
     async fn test_post_request() {
@@ -67,16 +36,52 @@ mod tests {
             email: format!("String {}", rng.gen::<u16>()),
             password_hash: format!("String {}", rng.gen::<u16>()),
         };
-    
-        let response = make_post_request(&user).await.expect("Failed to make request");
-    
+        
+        let url_request = "http://127.0.0.1:8000/users/";
+        let client = reqwest::Client::new();
+
+        let response = client.post(url_request)
+            .json(&user)
+            .send()
+            .await
+            .expect("Failed to send request");
+        
+
         assert_eq!(response.status(), StatusCode::CREATED);
-    
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.expect("Failed to read response body");
-        let body_str = String::from_utf8(body_bytes.to_vec()).expect("Response was not valid UTF-8");
-    
-        println!("Response: {}", body_str);
+
+
     }
+
+
+    #[tokio::test]
+    async fn test_cannot_post_same() {
+        let mut rng = rand::thread_rng();
+
+        let user = User {
+            name: Some(format!("String {}", rng.gen::<u16>())),
+            username: format!("String {}", rng.gen::<u16>()),
+            email: format!("String {}", rng.gen::<u16>()),
+            password_hash: format!("String {}", rng.gen::<u16>()),
+        };
+    
+        let url_request = "http://127.0.0.1:8000/users/";
+        let client = reqwest::Client::new();
+
+        let _response1 = client.post(url_request)
+            .json(&user)
+            .send()
+            .await
+            .expect("Failed to send POST request");
+
+        let response2 = client.post(url_request)
+            .json(&user)
+            .send()
+            .await
+            .expect("Failed to send POST request");
+
+        assert_ne!(response2.status(), StatusCode::OK);
+    }
+
 
     #[tokio::test]
     async fn test_post_and_get() {
@@ -89,27 +94,25 @@ mod tests {
             password_hash: format!("String {}", rng.gen::<u16>()),
         };
     
-        let response = make_post_request(&user).await.expect("Failed to make request");
-        
-        assert_eq!(response.status(), StatusCode::CREATED);
-    
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.expect("Failed to read response body");
-        let body_str = String::from_utf8(body_bytes.to_vec()).expect("Response was not valid UTF-8");
-        let response_serialized: Result<CreateUserResponse, serde_json::Error> = serde_json::from_str(&body_str);
-        
-        assert!(response_serialized.is_ok());
-        
-        let r = response_serialized.unwrap();
-        let resp_result = make_get_request(&r.id).await;
-        
-        assert!(resp_result.is_ok());
-        
-        let resp: Response<Body> = resp_result.unwrap();
-        
-        assert_eq!(resp.status(), 200);
+        let url_request = "http://127.0.0.1:8000/users/";
+        let client = reqwest::Client::new();
 
+        let response = client.post(url_request)
+            .json(&user)
+            .send()
+            .await
+            .expect("Failed to send POST request");
 
-        println!("Response: {}", body_str);
+        let create_response: CreateUserResponse = response.json().await.expect("Failed to parse response");
+        let user_id: String = create_response.id;
+
+        let get_url = format!("http://127.0.0.1:8000/users/{user_id}");
+        let get_response = client.get(&get_url)
+            .send()
+            .await
+            .expect("Failed to send GET request");
+
+        assert_eq!(get_response.status(), StatusCode::OK);
     }
 
 
@@ -122,14 +125,16 @@ mod tests {
             password_hash: "String6".to_string(),
         };
 
-        let response = make_post_request(&user).await.expect("Failed to make request");
+        let url_request = "http://127.0.0.1:8000/users/";
+        let client = reqwest::Client::new();
+
+        let response = client.post(url_request)
+            .json(&user)
+            .send()
+            .await
+            .expect("Failed to send request");
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.expect("Failed to read response body");
-        let body_str = String::from_utf8(body_bytes.to_vec()).expect("Response was not valid UTF-8");
-
-        println!("Response: {}", body_str);
     }
 
 }
