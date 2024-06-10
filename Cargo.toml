@@ -28,4 +28,5 @@ reqwest = { version = "0.12.4", features = ["json"] }
 jsonwebtoken = "9.3"
 bcrypt = "0.15.1"
 base64 = "0.22.1"
+futures-util = "0.3.30"
 # sea-orm-cli = "0.12.15"

@@ -196,6 +196,7 @@ dependencies = [
  "dotenv",
  "entity",
  "futures",
+ "futures-util",
  "jsonwebtoken",
  "migration",
  "rand",
